@@ -127,3 +127,12 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+README.md
+# sdk testing
+testbed.yaml
+old/
+pre/
+post/
+pre_check/
+post_checK/
+pyats_env
