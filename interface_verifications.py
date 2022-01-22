@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 
 class CommonSetup(aetest.CommonSetup):
     @aetest.subsection
+    # skip task if test case in easypy mode
+    if __name__ != "__main__":
+        self.skipped("Common setup is handled by another test case in case file in case of easypy run mode.")
+
     def verify_pre_directory(self, pre, post):
         """
         verify pre verifications report directory exist
@@ -70,8 +74,8 @@ class CommonSetup(aetest.CommonSetup):
         """
         establishes connection to all your testbed devices.
         """
-        # skipp the task if the report_directory_alredy_exist and the test case is in standalone execution
-        if self.report_directory_alredy_exist and __name__ == "__main__":
+        # skipp the task if the test case is run in easypy execution mode.
+        if __name__ == "__main__":
             self.skipped("Don't need to connect interface feature if the report_directory_alredy_exist and the test case is in standalone execution.")
 
         # make sure testbed is provided
@@ -86,12 +90,8 @@ class CommonSetup(aetest.CommonSetup):
             logger.error("Unable to connect to all devices")
 
     @aetest.subsection
-    def learn_interface(self, testbed, pre, post):
+    def learn_interfaces(self, testbed, steps, pre, post):
         """Learn and save the interface details from the testbed devices."""
-        # skipp the task if the report_directory_alredy_exist and the test case is in standalone execution
-        if self.report_directory_alredy_exist and __name__ == "__main__":
-            self.skipped("Don't need to learn interface feature if the report_directory_alredy_exist ")
-
         # set the report_directory, either pre or post
         if pre and post:
             report_directory = post
@@ -101,14 +101,32 @@ class CommonSetup(aetest.CommonSetup):
         # crerate a dic to store interface information per device
         learnt_interfaces = {}
         for device_name, device in testbed.devices.items():
+            
+            # output file name and path
+            output_file_name = f"{device_name}_interface.json"
+            output_file_path = os.path.join(report_directory, output_file_name)
 
-            # Only attempt to learn details on supported network operation systems
-            if device.os in ("ios", "iosxe", "iosxr", "nxos"):
-                logger.info(f"{device_name} connected status: {device.connected}")
-                logger.info(f"Learning Interfaces for {device_name}")
-                learnt_interfaces[device_name] = device.learn("interface").info
-                with open(os.path.join(report_directory, f"{device_name}_interface.json"), "w") as f:
-                    json.dump(learnt_interfaces[device_name], f ,sort_keys=True, indent=4)
+            # create new steps context for each device
+            with steps.start(
+                f"Attempt to learn 'interfaces' from {device_name}.", continue_ = True
+            ) as device_step:
+
+                # Only attempt to learn details on supported network operation systems
+                if device.os in ("ios", "iosxe", "iosxr", "nxos"):
+                    logger.info(f"{device_name} connected status: {device.connected}")
+                    logger.info(f"Learning Interfaces for {device_name}")
+
+                    # skipp the task if the output files already exist
+                    if os.path.exists(output_file_path) and os.path.isfile(output_file_path):
+                        device_step.skipped("Output file: {output_file_path} already exist.")
+                    else:
+                        try:
+                            learnt_interfaces[device_name] = device.learn("interface").info
+                            with open(os.path.join(report_directory, output_file_name, "w") as f:
+                                json.dump(learnt_interfaces[device_name], f ,sort_keys=True, indent=4)
+                        except BaseException as e:
+                            device_step.failed(f"Failed to create the output file: {output_file_path} beacuse of error: {e}")
+                        device_step.passed("Output file: {output_file_path} created successfully!")
 
 
 class interface_errors(aetest.Testcase):
@@ -143,13 +161,13 @@ class interface_errors(aetest.Testcase):
         # Loop over every device with learnt interfaces
         for device_name, interfaces in self.learnt_interfaces.items():
             with steps.start(
-                f"Looking for Interface Errors on {device_name}", continue_=True
+                f"Looking for Interface Errors on {device_name}", continue_ = True
             ) as device_step:
 
                 # Loop over every interface that was learnt
                 for interface_name, interface in interfaces.items():
                     with device_step.start(
-                        f"Checking Interface {interface_name}", continue_=True
+                        f"Checking Interface {interface_name}", continue_ = True
                     ) as interface_step:
                         # Create a dict to store the failed counters 
                         failed_counters = { 'pre': {},
@@ -239,12 +257,12 @@ class interface_or_traffic_down(aetest.Testcase):
         # Loop over every device with learnt interfaces
         for device_name, interfaces in self.learnt_interfaces.items():
             with steps.start(
-                f"Looking for Interfaces down or Traffic down {device_name}", continue_=True
+                f"Looking for Interfaces down or Traffic down {device_name}", continue_ = True
             ) as device_step:
                 # Loop over every interface that was learnt
                 for interface_name, interface in interfaces.items():
                     with device_step.start(
-                        f"Checking Interface {interface_name}", continue_=True
+                        f"Checking Interface {interface_name}", continue_ = True
                     ) as interface_step:
                         # Verify that this interfaces has "oper_status" down
                         if 'oper_status' in interface.keys():
@@ -330,12 +348,12 @@ class interface_or_traffic_down(aetest.Testcase):
         # Loop over every device with learnt interfaces
         for device_name, interfaces in self.learnt_interfaces.items():
             with steps.start(
-                f"Looking for Interfaces in half-duplex {device_name}", continue_=True
+                f"Looking for Interfaces in half-duplex {device_name}", continue_ = True
             ) as device_step:
                 # Loop over every interface that was learnt
                 for interface_name, interface in interfaces.items():
                     with device_step.start(
-                        f"Checking Interface {interface_name}", continue_=True
+                        f"Checking Interface {interface_name}", continue_ = True
                     ) as interface_step:
                         # Verify that this interfaces has "duplex_mode" down
                         if 'duplex_mode' in interface.keys():
