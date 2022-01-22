@@ -70,9 +70,9 @@ class CommonSetup(aetest.CommonSetup):
         """
         establishes connection to all your testbed devices.
         """
-        # skipp the task if the report_directory_alredy_exist
-        if self.report_directory_alredy_exist:
-            self.skipped("Don't need to near interface feature if the report_directory_alredy_exist ")
+        # skipp the task if the report_directory_alredy_exist and the test case is in standalone execution
+        if self.report_directory_alredy_exist and __name__ == "__main__":
+            self.skipped("Don't need to connect interface feature if the report_directory_alredy_exist and the test case is in standalone execution.")
 
         # make sure testbed is provided
         assert testbed, "Testbed is not provided!"
@@ -88,9 +88,9 @@ class CommonSetup(aetest.CommonSetup):
     @aetest.subsection
     def learn_interface(self, testbed, pre, post):
         """Learn and save the interface details from the testbed devices."""
-        # skipp the task if the report_directory_alredy_exist
-        if self.report_directory_alredy_exist:
-            self.skipped("Don't need to near interface feature if the report_directory_alredy_exist ")
+        # skipp the task if the report_directory_alredy_exist and the test case is in standalone execution
+        if self.report_directory_alredy_exist and __name__ == "__main__":
+            self.skipped("Don't need to learn interface feature if the report_directory_alredy_exist ")
 
         # set the report_directory, either pre or post
         if pre and post:
