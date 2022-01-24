@@ -17,86 +17,17 @@ import json
 
 from pyats import aetest
 from genie.testbed import load
-from unicon.core.errors import TimeoutError, StateMachineError, ConnectionError
+from common_setup_cleanup import CommonSetup as base_CommonSetup
+from common_setup_cleanup import CommonCleanup as base_CommonCleanup
 
 # create a logger for this module
 logger = logging.getLogger(__name__)
 
 
-class CommonSetup(aetest.CommonSetup):
+class CommonSetup(base_CommonSetup):
     @aetest.subsection
-    # skip task if test case in easypy mode
-    if __name__ != "__main__":
-        self.skipped("Common setup is handled by another test case in case file in case of easypy run mode.")
-
-    def verify_pre_directory(self, pre, post):
-        """
-        verify pre verifications report directory exist
-        """
-        if not post:
-            self.skipped("No need to check if pre verification report directory exist during pre verifications")
-        else:
-            if os.path.exists(pre):
-                self.passed(f"Pre verifications Report directory {pre} exists!")
-            else:
-                self.failed(f"Pre verifications Report directory {pre} does not exists!")
-
-
-    @aetest.subsection
-    def create_report_directory(self, pre, post):
-        """
-        create report directory
-        """
-
-        # where verification stage is pre or post
-        if pre and post:
-            report_directory = post
-        elif pre:
-            report_directory = pre
-        
-        # create report_directory if it does not exist
-        if os.path.exists(report_directory):
-            # To store the pre-existence status of the report directory
-            self.report_directory_alredy_exist = True
-            self.skipped(f"Report directory {report_directory} already exists.")
-        else:
-            # To store the pre-existence status of the report directory
-            self.report_directory_alredy_exist = False
-            try:
-                os.mkdir(report_directory)
-            except:
-                self.failed(f"There was an error while trying to create report directory {report_directory}")
-            self.passed(f"Report directory {report_directory} created successfully")
-
-
-    @aetest.subsection
-    def connect(self, testbed):
-        """
-        establishes connection to all your testbed devices.
-        """
-        # skipp the task if the test case is run in easypy execution mode.
-        if __name__ == "__main__":
-            self.skipped("Don't need to connect interface feature if the report_directory_alredy_exist and the test case is in standalone execution.")
-
-        # make sure testbed is provided
-        assert testbed, "Testbed is not provided!"
-
-        # connect to all testbed devices
-        #   By default ANY error in the CommonSetup will fail the entire test run
-        #   Here we catch common exceptions if a device is unavailable to allow test to continue
-        try:
-            testbed.connect()
-        except (TimeoutError, StateMachineError, ConnectionError):
-            logger.error("Unable to connect to all devices")
-
-    @aetest.subsection
-    def learn_interfaces(self, testbed, steps, pre, post):
+    def learn_interfaces(self, testbed, steps, report_directory):
         """Learn and save the interface details from the testbed devices."""
-        # set the report_directory, either pre or post
-        if pre and post:
-            report_directory = post
-        elif pre:
-            report_directory = pre
 
         # crerate a dic to store interface information per device
         learnt_interfaces = {}
@@ -118,15 +49,21 @@ class CommonSetup(aetest.CommonSetup):
 
                     # skipp the task if the output files already exist
                     if os.path.exists(output_file_path) and os.path.isfile(output_file_path):
-                        device_step.skipped("Output file: {output_file_path} already exist.")
+                        device_step.skipped(f"Output file: {output_file_path} already exist.")
+
+                    # fail the task if device is not connected
+                    elif not device.connected:
+                        device_step.failed(f"Device {device_name} not connected.")
+
+                    # try to learn interfaces otherwise
                     else:
                         try:
                             learnt_interfaces[device_name] = device.learn("interface").info
-                            with open(os.path.join(report_directory, output_file_name, "w") as f:
+                            with open(output_file_path, "w") as f:
                                 json.dump(learnt_interfaces[device_name], f ,sort_keys=True, indent=4)
                         except BaseException as e:
-                            device_step.failed(f"Failed to create the output file: {output_file_path} beacuse of error: {e}")
-                        device_step.passed("Output file: {output_file_path} created successfully!")
+                            device_step.failed(f"Failed to create the output file: {output_file_path} beacause of error: {e}")
+                        device_step.passed(f"Output file: {output_file_path} created successfully!")
 
 
 class interface_errors(aetest.Testcase):
@@ -254,6 +191,8 @@ class interface_or_traffic_down(aetest.Testcase):
 
     @aetest.test
     def interface_or_traffic_down(self, steps, post):
+        # list of not to check interfaces
+        unwanted_interfaces = ("null",)
         # Loop over every device with learnt interfaces
         for device_name, interfaces in self.learnt_interfaces.items():
             with steps.start(
@@ -264,6 +203,11 @@ class interface_or_traffic_down(aetest.Testcase):
                     with device_step.start(
                         f"Checking Interface {interface_name}", continue_ = True
                     ) as interface_step:
+                        # skip the task if the interface is in the unwanted interface list
+                        for unwanted_interface in unwanted_interfaces:
+                            if unwanted_interface in interface_name.lower():
+                                print(unwanted_interface, interface_name.lower())
+                                interface_step.skipped(f"No need to check interface {interface_name} on device {device_name}.")
                         # Verify that this interfaces has "oper_status" down
                         if 'oper_status' in interface.keys():
                             if interface['oper_status'] in self.down_oper_status_values:
@@ -385,24 +329,8 @@ class interface_or_traffic_down(aetest.Testcase):
                             pass
 
 
-class CommonCleanup(aetest.CommonCleanup):
-    """CommonCleanup Section
-    < common cleanup docstring >
-    """
-
-    @aetest.subsection
-    def disconnect(self, testbed):
-        """
-        disconnects from all your testbed devices.
-        """
-        # make sure testbed is provided
-        assert testbed, "Testbed is not provided!"
-
-        # disconnect from all testbed devices
-        logger.info(
-            "Disconnecting from all testbed devices"
-        )
-        testbed.disconnect()
+class CommonCleanup(base_CommonCleanup):
+    pass
 
 
 if __name__ == "__main__":
@@ -437,8 +365,16 @@ if __name__ == "__main__":
         # type=Genie.init,
         default=None,
     )
+    parser.add_argument(
+        "--offline",
+        dest="offline",
+        help="offline mode",
+        type=bool,
+        # type=Genie.init,
+        default=None,
+    )
 
     # do the parsing
     args, sys.argv[1:] = parser.parse_known_args(sys.argv[1:])
 
-    aetest.main(testbed=args.testbed, pre=args.pre, post=args.post)
+    aetest.main(testbed=args.testbed, pre=args.pre, post=args.post, offline=args.offline)
